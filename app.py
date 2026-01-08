@@ -11,10 +11,10 @@ from scipy.stats import linregress
 import time
 
 # ============================================
-# 0. 系統設定 & CSS (全域 24px 大字體優化)
+# 0. 系統設定 & CSS (全域 24px 大字體優化 + 隱藏帳號)
 # ============================================
 st.set_page_config(
-    page_title="Phoenix V74 帝王原神版",
+    page_title="Phoenix V75 帝王匿名版",
     page_icon="🦅",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -22,10 +22,10 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-    /* 1. 全局字體強制加大 */
+    /* 1. 強制放大所有文字元件 */
     html, body, [class*="css"], .stMarkdown, .stDataFrame, .stTable, p, div, input, label, span, button, .stSelectbox, .stRadio {
         font-family: 'Microsoft JhengHei', 'Arial', sans-serif !important;
-        font-size: 24px !important; 
+        font-size: 24px !important;
         line-height: 1.6 !important;
     }
     
@@ -49,10 +49,16 @@ st.markdown("""
         line-height: 1.6;
     }
     
-    /* 5. 隱藏干擾元素 */
+    /* 5. 隱藏干擾元素 & 隱藏右下角帳號資訊 [V75 關鍵] */
     thead tr th:first-child { display:none }
     tbody th { display:none }
     .modebar { display: none !important; }
+    
+    /* 隱藏 Streamlit 的 Footer 和 Viewer Badge (右下角頭像) */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    .viewerBadge_container__1QSob {display: none !important;}
     
     /* 6. 自訂大字體數據卡片 */
     .big-metric-box {
@@ -74,9 +80,7 @@ st.markdown("""
 # 檔案路徑定義
 CSV_FILE = "phoenix_history.csv"
 PARQUET_FILE = "phoenix_history.parquet"
-# [V74 新增] 這是關鍵：用來儲存「今日詳細籌碼」的快照檔
-# 讓首頁可以在「不上傳」的情況下，直接讀取社長上傳的最新資料
-DAILY_SNAPSHOT = "daily_snapshot.csv"
+DAILY_SNAPSHOT = "daily_snapshot.csv" # 存放今日明細，供首頁與雷達讀取
 
 # ============================================
 # 1. 核心資料清洗與 I/O 邏輯
@@ -130,7 +134,7 @@ def load_db():
 
 @st.cache_data(ttl=600)
 def load_daily_snapshot():
-    """[V74] 讀取今日快照 (給首頁、獵殺雷達用)"""
+    """讀取今日快照 (給首頁、獵殺雷達用)"""
     if os.path.exists(DAILY_SNAPSHOT):
         try:
             df = pd.read_csv(DAILY_SNAPSHOT)
@@ -169,7 +173,7 @@ def save_to_db(new_data_df, detail_df=None):
     try: final_db.to_parquet(PARQUET_FILE, index=False)
     except: pass
     
-    # [V74] 儲存快照
+    # 儲存快照
     if detail_df is not None and not detail_df.empty:
         detail_df['Broker'] = detail_df['Broker'].apply(clean_broker_name)
         detail_df.to_csv(DAILY_SNAPSHOT, index=False, encoding='utf-8-sig')
@@ -188,8 +192,7 @@ def process_csv_content(df_raw, date_obj):
         df_detail['Broker'] = df_detail['Broker'].apply(clean_broker_name)
         for col in ['Price', 'Buy', 'Sell']: df_detail[col] = pd.to_numeric(df_detail[col], errors='coerce').fillna(0)
         
-        # 移除依賴 CSV 內的收盤價，改為 0 或不處理
-        day_close = 0
+        day_close = 0 # 移除收盤價
         total_vol = df_detail['Buy'].sum()
         tx_count = len(df_detail)
         
@@ -229,6 +232,15 @@ def process_uploaded_file(uploaded_file):
         except: 
             uploaded_file.seek(0)
             df_raw = pd.read_csv(uploaded_file, encoding='utf-8', header=None, skiprows=2)
+        return process_csv_content(df_raw, date_obj)
+    except: return None, None
+
+def process_local_file(file_path):
+    try:
+        with open(file_path, 'rb') as f: head = f.read(1000).decode('cp950', errors='ignore')
+        date_obj = date.today() # 簡化日期判斷
+        try: df_raw = pd.read_csv(file_path, encoding='cp950', header=None, skiprows=2)
+        except: df_raw = pd.read_csv(file_path, encoding='utf-8', header=None, skiprows=2)
         return process_csv_content(df_raw, date_obj)
     except: return None, None
 
@@ -274,12 +286,9 @@ def color_pnl(val):
 def plot_bar_chart(data, x_col, y_col, title, color_code, avg_col=None):
     """
     [V74 修正] 恢復均價顯示
-    如果傳入了 avg_col (例如 'BuyAvg' 或 'SellAvg')，就顯示在 Label 上
     """
-    # 基礎 Label：張數
     data['Label'] = (data[x_col].abs()).round(1).astype(str) + "張"
     
-    # [V74 補強] 如果有均價，加上去
     if avg_col and avg_col in data.columns:
          data['Label'] = data['Label'] + " ($" + data[avg_col].round(1).astype(str) + ")"
 
@@ -294,7 +303,7 @@ def plot_bar_chart(data, x_col, y_col, title, color_code, avg_col=None):
     fig.update_layout(
         yaxis={'categoryorder':'total ascending', 'title':None, 'tickfont':{'size':24, 'color':'black'}}, 
         xaxis={'title':"", 'showticklabels':False}, 
-        margin=dict(r=200), # 增加右側邊距以容納較長的文字
+        margin=dict(r=200), 
         height=700, 
         font=dict(size=22, family="Microsoft JhengHei")
     )
@@ -319,7 +328,6 @@ def view_dashboard():
     agg['BuyAvg'] = np.where(agg['Buy']>0, agg['BuyCost']/agg['Buy'], 0)
     agg['SellAvg'] = np.where(agg['Sell']>0, agg['SellCost']/agg['Sell'], 0)
     
-    # 全域變數
     total_vol = df_detail['Buy'].sum()
     buy_brokers = df_detail[df_detail['Net'] > 0]['Broker'].nunique()
     sell_brokers = df_detail[df_detail['Net'] < 0]['Broker'].nunique()
@@ -330,7 +338,6 @@ def view_dashboard():
     conc = (top15_buy + top15_sell) / total_vol * 100
     power_score = min(100, max(0, 50 + (diff_brk * 0.5) + ((conc - 30) * 1.5)))
 
-    # 顯示
     c1, c2, c3 = st.columns([1, 1, 2])
     with c1:
         color = "#28A745" if power_score > 60 else ("#DC3545" if power_score < 40 else "#FFC107")
@@ -347,61 +354,64 @@ def view_dashboard():
     col_hb, col_tool = st.columns([1, 1])
     with col_hb:
         st.subheader("🥊 今日多空重拳")
-        max_buy = df_detail.loc[df_detail['Buy'].idxmax()]
-        max_sell = df_detail.loc[df_detail['Sell'].idxmax()]
-        st.info(f"🔴 **最兇買盤**：{max_buy['Broker']} @ {max_buy['Price']}元 買 {max_buy['Buy']/1000:,.1f} 張")
-        st.warning(f"🟢 **最兇賣盤**：{max_sell['Broker']} @ {max_sell['Price']}元 賣 {max_sell['Sell']/1000:,.1f} 張")
+        if not df_detail.empty:
+            max_buy = df_detail.loc[df_detail['Buy'].idxmax()]
+            max_sell = df_detail.loc[df_detail['Sell'].idxmax()]
+            st.info(f"🔴 **最兇買盤**：{max_buy['Broker']} @ {max_buy['Price']}元 買 {max_buy['Buy']/1000:,.1f} 張")
+            st.warning(f"🟢 **最兇賣盤**：{max_sell['Broker']} @ {max_sell['Price']}元 賣 {max_sell['Sell']/1000:,.1f} 張")
+        else:
+            st.warning("無當日明細資料。")
     
     with col_tool:
         st.subheader("🛠️ 戰術工具箱")
         tool_mode = st.radio("功能選擇", ["🎯 查價位", "🕵️‍♂️ 查分點"], horizontal=True)
         
-        if tool_mode == "🎯 查價位":
-            prices = sorted(df_detail['Price'].unique(), reverse=True)
-            t_p = st.selectbox("選擇價位", prices)
-            sort_m = st.radio("排序", ["🔴 買超優先", "🟢 賣超優先"], horizontal=True)
-            px_d = df_detail[df_detail['Price'] == t_p].copy()
-            if "買超" in sort_m: px_d = px_d.sort_values('Net', ascending=False)
-            else: px_d = px_d.sort_values('Net', ascending=True)
-            px_show = px_d[['Broker', 'Net']].head(5).copy()
-            px_show['Net'] = px_show['Net'] / 1000
-            px_show.columns = ['券商', '淨買賣(張)']
-            # [修正] applymap
-            st.dataframe(px_show.style.format("{:.1f}", subset=['淨買賣(張)']).applymap(color_pnl, subset=['淨買賣(張)']), use_container_width=True, hide_index=True)
-        
-        else: 
-            all_bks = sorted(agg['Broker'].unique())
-            t_bk = st.selectbox("選擇券商 (查看今日詳細)", all_bks)
-            bk_agg = agg[agg['Broker'] == t_bk].iloc[0]
+        if not df_detail.empty:
+            if tool_mode == "🎯 查價位":
+                prices = sorted(df_detail['Price'].unique(), reverse=True)
+                t_p = st.selectbox("選擇價位", prices)
+                sort_m = st.radio("排序", ["🔴 買超優先", "🟢 賣超優先"], horizontal=True)
+                px_d = df_detail[df_detail['Price'] == t_p].copy()
+                if "買超" in sort_m: px_d = px_d.sort_values('Net', ascending=False)
+                else: px_d = px_d.sort_values('Net', ascending=True)
+                px_show = px_d[['Broker', 'Net']].head(5).copy()
+                px_show['Net'] = px_show['Net'] / 1000
+                px_show.columns = ['券商', '淨買賣(張)']
+                st.dataframe(px_show.style.format("{:.1f}", subset=['淨買賣(張)']).applymap(color_pnl, subset=['淨買賣(張)']), use_container_width=True, hide_index=True)
             
-            st.markdown(f"""
-            <div style="display: flex; gap: 15px; margin-bottom: 20px;">
-                <div class="big-metric-box" style="flex:1; border-color: #DC3545"><div class="metric-label">淨買賣</div><div class="metric-value">{bk_agg['Net']/1000:+,.1f} 張</div></div>
-                <div class="big-metric-box" style="flex:1; border-color: #28A745"><div class="metric-label">買均 / 賣均</div><div class="metric-value" style="font-size: 28px; line-height: 1.5;">{bk_agg['BuyAvg']:.2f} / {bk_agg['SellAvg']:.2f}</div></div>
-            </div>""", unsafe_allow_html=True)
+            else: 
+                all_bks = sorted(agg['Broker'].unique())
+                t_bk = st.selectbox("選擇券商 (查看今日詳細)", all_bks)
+                bk_agg = agg[agg['Broker'] == t_bk].iloc[0]
+                
+                st.markdown(f"""
+                <div style="display: flex; gap: 15px; margin-bottom: 20px;">
+                    <div class="big-metric-box" style="flex:1; border-color: #DC3545"><div class="metric-label">淨買賣</div><div class="metric-value">{bk_agg['Net']/1000:+,.1f} 張</div></div>
+                    <div class="big-metric-box" style="flex:1; border-color: #28A745"><div class="metric-label">買均 / 賣均</div><div class="metric-value" style="font-size: 28px; line-height: 1.5;">{bk_agg['BuyAvg']:.2f} / {bk_agg['SellAvg']:.2f}</div></div>
+                </div>""", unsafe_allow_html=True)
 
-            bk_detail_raw = df_detail[df_detail['Broker'] == t_bk].copy()
-            if not bk_detail_raw.empty:
-                st.markdown(f"**{t_bk} 各價位明細：**")
-                bk_grp = bk_detail_raw.groupby('Price')[['Buy', 'Sell']].sum().reset_index().sort_values('Price', ascending=False)
-                bk_grp['Net'] = bk_grp['Buy'] - bk_grp['Sell']
-                bk_grp['Buy'] /= 1000
-                bk_grp['Sell'] /= 1000
-                bk_grp['Net'] /= 1000
-                bk_grp.columns = ['價位', '買進(張)', '賣出(張)', '淨買賣(張)']
-                st.dataframe(bk_grp.style.format("{:.1f}", subset=['買進(張)','賣出(張)','淨買賣(張)']).applymap(color_pnl, subset=['淨買賣(張)']), use_container_width=True, hide_index=True)
+                bk_detail_raw = df_detail[df_detail['Broker'] == t_bk].copy()
+                if not bk_detail_raw.empty:
+                    st.markdown(f"**{t_bk} 各價位明細：**")
+                    bk_grp = bk_detail_raw.groupby('Price')[['Buy', 'Sell']].sum().reset_index().sort_values('Price', ascending=False)
+                    bk_grp['Net'] = bk_grp['Buy'] - bk_grp['Sell']
+                    bk_grp['Buy'] /= 1000
+                    bk_grp['Sell'] /= 1000
+                    bk_grp['Net'] /= 1000
+                    bk_grp.columns = ['價位', '買進(張)', '賣出(張)', '淨買賣(張)']
+                    st.dataframe(bk_grp.style.format("{:.1f}", subset=['買進(張)','賣出(張)','淨買賣(張)']).applymap(color_pnl, subset=['淨買賣(張)']), use_container_width=True, hide_index=True)
+        else:
+            st.info("請社長上傳今日資料以查看價位明細。")
 
     st.markdown("---")
     cc1, cc2 = st.columns(2)
     with cc1:
         top_buy = agg.nlargest(15, 'Net').sort_values('Net', ascending=True)
         top_buy['Abs_Zhang'] = top_buy['Net'] / 1000
-        # [V74 修正] 傳入 BuyAvg 顯示均價
         st.plotly_chart(plot_bar_chart(top_buy, 'Abs_Zhang', 'Broker', "🔴 今日買超 Top 15", '#DC3545', avg_col='BuyAvg'), use_container_width=True)
     with cc2:
         top_sell = agg.nsmallest(15, 'Net').sort_values('Net', ascending=False).sort_values('Net', ascending=True)
         top_sell['Abs_Zhang'] = top_sell['Net'].abs() / 1000
-        # [V74 修正] 傳入 SellAvg 顯示均價
         st.plotly_chart(plot_bar_chart(top_sell, 'Abs_Zhang', 'Broker', "🟢 今日賣超 Top 15", '#28A745', avg_col='SellAvg'), use_container_width=True)
 
 # ============================================
@@ -461,6 +471,7 @@ def view_chip_structure():
         target_v['AbsNet'] = target_v['Net'].abs() / 1000
         target_v['Net_Zhang'] = target_v['Net'] / 1000
         target_v['Tier'] = target_v['Net'].apply(get_tier)
+        
         custom_scale = [[0.0, 'green'], [0.5, 'white'], [1.0, 'red']]
         max_val = max(abs(target_v['Net_Zhang'].min()), abs(target_v['Net_Zhang'].max()))
         fig_v = px.treemap(target_v, path=[px.Constant("全市場"), 'Tier', 'Broker'], values='AbsNet',
@@ -519,7 +530,7 @@ def view_hunter_radar():
         else: st.success("✅ 安靜。")
 
     st.subheader("🩸 幫派辨識")
-    # [V74 修復] 從快照讀取今日幫派數據
+    # [V75] 修復：從快照讀取今日幫派數據
     df_snapshot = load_daily_snapshot()
     if not df_snapshot.empty:
         df_gang = df_snapshot.copy()
@@ -587,7 +598,7 @@ def view_trend_analysis():
     else:
         group = df_period.groupby('Broker').agg({'Buy':'sum', 'Sell':'sum', 'Net':'sum', 'BuyCost':'sum', 'SellCost':'sum'}).reset_index()
         group['Net_Zhang'] = (group['Net']/1000).round(1)
-        # [V74 新增] 這裡也需要算出均價
+        # [V74 新增] 算出區間均價
         group['BuyAvg'] = np.where(group['Buy']>0, group['BuyCost']/group['Buy'], 0)
         group['SellAvg'] = np.where(group['Sell']>0, group['SellCost']/group['Sell'], 0)
 
@@ -609,8 +620,10 @@ def view_winners():
     st.header("🏆 贏家與韭菜名人堂")
     df_hist = load_db()
     if df_hist.empty: return
+    
     range_opt = st.radio("範圍", ["近 20 日", "近 60 日", "自訂"], horizontal=True)
     dates = sorted(df_hist['Date'].unique())
+    
     if range_opt == "近 20 日": d_sub = df_hist[df_hist['Date'].isin(dates[-20:])]
     elif range_opt == "近 60 日": d_sub = df_hist[df_hist['Date'].isin(dates[-60:])]
     else: 
@@ -621,6 +634,7 @@ def view_winners():
         
     group = d_sub.groupby('Broker').agg({'Net': 'sum', 'BuyCost': 'sum', 'Buy': 'sum'}).reset_index()
     group['AvgCost'] = group['BuyCost'] / group['Buy']
+    
     winners = group.nlargest(10, 'Net')
     losers = group.nsmallest(10, 'Net')
 
@@ -674,7 +688,6 @@ def view_broker_detective():
         fig.add_trace(go.Bar(x=data['Date'], y=data['Net_Zhang'], name='淨買賣(張)', marker_color=np.where(data['Net']>0, '#DC3545', '#28A745')))
         fig.update_layout(title=f"{target} 操作軌跡", yaxis=dict(title="張數"), height=500)
         st.plotly_chart(fig, use_container_width=True)
-        
         show = data[['Date', 'Buy', 'Sell', 'Net', 'BuyAvg']].copy()
         show.iloc[:, 1:4] /= 1000
         show.columns = ['日期', '買進(張)', '賣出(張)', '淨買賣(張)', '買均']
@@ -691,9 +704,9 @@ def view_batch_import():
     if admin_pwd == "8888":
         st.success("🔓 社長權限已解鎖！")
         
-        # [V74] 社長專用上傳區 (此區上傳後會同步更新首頁)
+        # [V74] 社長專用上傳區 (同步更新快照)
         st.subheader("📤 上傳今日 CSV (更新首頁資訊)")
-        st.info("在此上傳後，首頁、獵殺雷達都會立即顯示最新數據。")
+        st.info("上傳後，首頁、獵殺雷達、買賣超排行都會立即顯示最新數據。")
         uploaded_file = st.file_uploader("拖曳今日 CSV 到此處", type=['csv'], key="today_csv")
         
         if uploaded_file and st.button("🚀 更新今日戰情"):
@@ -712,7 +725,7 @@ def view_batch_import():
                 st.rerun()
 
         st.markdown("---")
-        st.caption("下方為批次歷史資料匯入 (不影響今日首頁，僅更新歷史庫)")
+        st.caption("下方為批次歷史資料匯入 (不影響今日首頁)")
         tab1, tab2 = st.tabs(["🚀 本機掃描 (推薦)", "📤 批量拖曳上傳"])
         
         with tab1:
@@ -760,8 +773,8 @@ def view_batch_import():
 # ============================================
 def main():
     with st.sidebar:
-        st.title("🦅 Phoenix V74")
-        st.caption("帝王原神版")
+        st.title("🦅 Phoenix V75")
+        st.caption("帝王匿名版")
         st.markdown("---")
         choice = st.radio("功能選單", [
             "🏠 總司令儀表板", 
