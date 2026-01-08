@@ -14,7 +14,7 @@ import time
 # 0. 系統設定 & CSS (全域 24px 大字體優化)
 # ============================================
 st.set_page_config(
-    page_title="Phoenix V52 極速修正版",
+    page_title="Phoenix V52 安全特仕版",
     page_icon="🦅",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -22,7 +22,7 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-    /* 1. 強制放大所有文字元件 (包含表格、輸入框、按鈕) */
+    /* 1. 強制放大所有文字元件 */
     html, body, [class*="css"], .stMarkdown, .stDataFrame, .stTable, p, div, input, label, span, button, .stSelectbox {
         font-family: 'Microsoft JhengHei', 'Arial', sans-serif !important;
         font-size: 24px !important; 
@@ -36,7 +36,7 @@ st.markdown("""
     /* 3. 版面間距調整 */
     .block-container { padding-top: 1rem; padding-bottom: 5rem; }
     
-    /* 4. 戰術指導區塊 (藍色背景) */
+    /* 4. 戰術指導區塊 */
     .tactical-guide {
         background-color: #e3f2fd;
         border-left: 8px solid #2196F3;
@@ -48,17 +48,17 @@ st.markdown("""
         line-height: 1.6;
     }
     
-    /* 5. 隱藏 DataFrame 的索引欄 (0, 1, 2...) */
+    /* 5. 隱藏 DataFrame 索引 */
     thead tr th:first-child { display:none }
     tbody th { display:none }
     
-    /* 6. 隱藏 Plotly 圖表右上角的工具列 (Modebar) */
+    /* 6. 隱藏 Plotly 工具列 */
     .modebar { display: none !important; }
     
-    /* 7. 自訂大字體數據卡片 (解決 Streamlit 原生 Metric 擠壓問題) */
+    /* 7. 自訂大字體數據卡片 */
     .big-metric-box {
         background-color: #f8f9fa;
-        border-left: 10px solid #DC3545; /* 預設紅色邊條 */
+        border-left: 10px solid #DC3545; 
         padding: 15px;
         margin: 10px 0;
         border-radius: 8px;
@@ -67,7 +67,7 @@ st.markdown("""
     .metric-label { font-size: 24px; color: #555; font-weight: bold; margin-bottom: 5px; }
     .metric-value { font-size: 40px; color: #000; font-weight: 900; }
     
-    /* 8. 表格框線加強 */
+    /* 8. 表格框線 */
     div[data-testid="stDataFrame"] { border: 2px solid #CCC; }
     </style>
     """, unsafe_allow_html=True)
@@ -77,13 +77,10 @@ CSV_FILE = "phoenix_history.csv"
 PARQUET_FILE = "phoenix_history.parquet"
 
 # ============================================
-# 1. 核心資料清洗與 I/O 邏輯 (Data Cleaning)
+# 1. 核心資料清洗與 I/O 邏輯
 # ============================================
 
 def clean_broker_name(name):
-    """
-    強力清洗券商名稱
-    """
     if pd.isna(name): return "未知"
     name = str(name)
     cleaned = re.sub(r'^[A-Za-z0-9]+\s*', '', name)
@@ -91,10 +88,7 @@ def clean_broker_name(name):
     return cleaned.strip()
 
 def scrub_history_file():
-    """
-    啟動時自動掃描並清洗歷史檔案 (CSV)。
-    【B大注意】：為了速度，這個函數現在僅定義，不自動執行。
-    """
+    """啟動時自動掃描 (為了速度，預設關閉自動執行)"""
     if os.path.exists(CSV_FILE):
         try:
             df = pd.read_csv(CSV_FILE)
@@ -107,22 +101,18 @@ def scrub_history_file():
         except Exception as e:
             print(f"自動清洗失敗: {e}")
 
-# 🚀 【關鍵修正】註解掉下面這行，程式就會秒開！
+# 為了讓社員開啟網頁時秒開，這裡先註解掉，避免每次重新整理都跑清洗
 # scrub_history_file() 
 
 @st.cache_data(ttl=600)
 def load_db():
-    """
-    讀取歷史資料庫。
-    """
-    # 1. 嘗試讀取 Parquet
+    # 1. 嘗試讀取 Parquet (最快)
     if os.path.exists(PARQUET_FILE):
         try:
             df = pd.read_parquet(PARQUET_FILE)
             if 'Date' in df.columns:
                 df['Date'] = pd.to_datetime(df['Date']).dt.date
             if 'Broker' in df.columns:
-                # 讀取時在記憶體清洗，不寫硬碟，速度快
                 df['Broker'] = df['Broker'].apply(clean_broker_name)
             return df
         except: pass 
@@ -132,7 +122,7 @@ def load_db():
         try:
             df = pd.read_csv(CSV_FILE)
             df['Date'] = pd.to_datetime(df['Date']).dt.date
-            # 讀取時在記憶體清洗，不寫硬碟，速度快
+            # 讀取時在記憶體清洗
             if 'Broker' in df.columns:
                 df['Broker'] = df['Broker'].apply(clean_broker_name)
             
@@ -145,9 +135,6 @@ def load_db():
     return pd.DataFrame()
 
 def save_to_db(new_data_df):
-    """
-    將新資料寫入資料庫。
-    """
     if new_data_df is None or new_data_df.empty: return
     
     new_data_df['Broker'] = new_data_df['Broker'].apply(clean_broker_name)
@@ -158,7 +145,6 @@ def save_to_db(new_data_df):
     new_data_df = new_data_df[cols]
 
     if os.path.exists(CSV_FILE):
-        # 這裡為了讀取舊資料，不使用 cache，直接讀檔
         try:
             old_db = pd.read_csv(CSV_FILE)
             old_db['Date'] = pd.to_datetime(old_db['Date']).dt.date
@@ -177,7 +163,6 @@ def save_to_db(new_data_df):
     final_db = final_db.sort_values(by=['Date', 'Net'], ascending=[True, False])
     
     final_db.to_csv(CSV_FILE, index=False, encoding='utf-8-sig')
-    
     try:
         final_db.to_parquet(PARQUET_FILE, index=False)
     except: pass
@@ -187,16 +172,13 @@ def save_to_db(new_data_df):
 def smart_parse_date(filename, content_head=None, file_path=None):
     match_iso = re.search(r"(\d{4})[-.\s](\d{2})[-.\s](\d{2})", filename)
     if match_iso: return date(int(match_iso.group(1)), int(match_iso.group(2)), int(match_iso.group(3)))
-    
     match_compact = re.search(r"(202\d{5})", filename)
     if match_compact: return datetime.strptime(match_compact.group(1), "%Y%m%d").date()
-    
     if content_head:
         try:
             tw_date = re.search(r"(\d{3})/(\d{1,2})/(\d{1,2})", content_head)
             if tw_date: return date(int(tw_date.group(1)) + 1911, int(tw_date.group(2)), int(tw_date.group(3)))
         except: pass
-        
     if file_path:
         try: return date.fromtimestamp(os.path.getmtime(file_path))
         except: pass
@@ -341,10 +323,10 @@ def view_dashboard():
     st.header("🏠 總司令儀表板")
     
     col_up, col_date = st.columns([2, 1])
-    with col_up: uploaded_file = st.file_uploader("上傳今日 CSV (自動清洗+極速)", type=['csv'])
+    with col_up: uploaded_file = st.file_uploader("上傳今日 CSV", type=['csv'])
     with col_date:
         date_pick = st.date_input("確認日期", date.today())
-        if uploaded_file and st.button("⚡ 啟動 V52 分析", type="primary"):
+        if uploaded_file and st.button("⚡ 啟動分析", type="primary"):
             uploaded_file.seek(0)
             try: df_raw = pd.read_csv(uploaded_file, encoding='cp950', header=None, skiprows=2)
             except: 
@@ -458,7 +440,6 @@ def view_ai_strategy():
     df_hist = load_db()
     if df_hist.empty: st.error("無歷史資料"); return
 
-    # Hurst
     st.subheader("1. 🌌 混沌趨勢檢測儀 (Hurst)")
     df_price = df_hist.sort_values('Date').drop_duplicates('Date').set_index('Date')['DayClose']
     if len(df_price) > 30:
@@ -480,16 +461,13 @@ def view_ai_strategy():
         """)
     st.markdown("---")
     
-    # NLP Sentiment
     st.subheader("2. 📢 市場情緒地震儀 (Sentiment)")
     if len(df_price) > 5:
         last_vol = df_hist.sort_values('Date').iloc[-1]['TotalVol']
         avg_vol = df_hist.groupby('Date')['TotalVol'].mean().mean()
         turnover_ratio = last_vol / avg_vol if avg_vol > 0 else 1
-        
         c_s1, c_s2 = st.columns([1, 2])
-        with c_s1:
-            st.metric("情緒貪婪指數", f"{turnover_ratio*50:.0f}") 
+        with c_s1: st.metric("情緒貪婪指數", f"{turnover_ratio*50:.0f}") 
         with c_s2:
             if turnover_ratio > 2.0: st.error("🚨 **極度貪婪**：全市場都在討論，小心主力倒貨。")
             else: st.success("😐 **情緒平穩**：正常交易區間。")
@@ -502,18 +480,13 @@ def view_ai_strategy():
         """)
     st.markdown("---")
 
-    # Kelly
     st.subheader("3. 💰 AI 操盤手 (Kelly)")
     c_k1, c_k2, c_k3 = st.columns(3)
     win_rate = c_k1.slider("預估勝率 (%)", 10, 90, 60) / 100
     odds = c_k2.number_input("盈虧比", 0.5, 5.0, 2.0)
-    
     kelly_pct = kelly_criterion(win_rate, odds)
     sugg_pos = max(0, kelly_pct * 0.5) 
-    
-    with c_k3:
-        st.metric("建議投入倉位", f"{sugg_pos*100:.1f} %")
-    
+    with c_k3: st.metric("建議投入倉位", f"{sugg_pos*100:.1f} %")
     with st.expander("ℹ️ B 大戰術指導：資金控管"):
         st.markdown("凱利公式能確保長期獲利最大化，避免破產。")
 
@@ -528,10 +501,8 @@ def view_chip_structure():
 
     st.subheader("🗺️ 動態沃羅諾伊戰場 (紅買/綠賣)")
     v_opt = st.radio("範圍", ["當日", "近 5 日", "近 10 日", "自訂"], horizontal=True)
-    
     target_v = pd.DataFrame()
-    if v_opt == "當日": 
-        target_v = df_hist[df_hist['Date'] == dates[-1]].copy()
+    if v_opt == "當日": target_v = df_hist[df_hist['Date'] == dates[-1]].copy()
     else:
         if v_opt == "近 5 日": sel_dates = dates[-5:]
         elif v_opt == "近 10 日": sel_dates = dates[-10:]
@@ -548,23 +519,16 @@ def view_chip_structure():
         target_v['Net_Zhang'] = target_v['Net'] / 1000
         target_v['Tier'] = target_v['Net'].apply(get_tier)
         
-        # 嚴格紅買綠賣配色
         custom_scale = [[0.0, 'green'], [0.5, 'white'], [1.0, 'red']]
         max_val = max(abs(target_v['Net_Zhang'].min()), abs(target_v['Net_Zhang'].max()))
         
         fig_v = px.treemap(target_v, path=[px.Constant("全市場"), 'Tier', 'Broker'], values='AbsNet',
-                           color='Net_Zhang', 
-                           color_continuous_scale=custom_scale,
-                           range_color=[-max_val, max_val],
+                           color='Net_Zhang', color_continuous_scale=custom_scale, range_color=[-max_val, max_val],
                            title=f"{v_opt} 主力領土 (面積=張數, 紅=買/綠=賣)")
-        fig_v.update_traces(
-            textfont=dict(size=28),
-            hovertemplate='<b>%{label}</b><br>淨量: %{color:.1f} 張<br>板塊大小: %{value:.1f} 張'
-        )
+        fig_v.update_traces(textfont=dict(size=28), hovertemplate='<b>%{label}</b><br>淨量: %{color:.1f} 張<br>板塊大小: %{value:.1f} 張')
         st.plotly_chart(fig_v, use_container_width=True)
 
     st.markdown("---")
-
     st.subheader("🌪️ 籌碼階級金字塔")
     if not target_v.empty:
         tiers = ["👑 超級大戶", "🦁 大戶", "🐯 中實戶", "🦊 小資", "🐜 散戶"]
@@ -574,7 +538,6 @@ def view_chip_structure():
             buy_vol = subset[subset['Net_Zhang'] > 0]['Net_Zhang'].sum()
             sell_vol = subset[subset['Net_Zhang'] < 0]['Net_Zhang'].sum()
             tier_stats.append({'Tier': t, 'Buy': buy_vol, 'Sell': sell_vol})
-        
         df_p = pd.DataFrame(tier_stats)
         fig_p = go.Figure()
         fig_p.add_trace(go.Bar(y=df_p['Tier'], x=df_p['Buy'], name='買方', orientation='h', marker_color='#DC3545', text=df_p['Buy'].round(1), textposition='outside'))
@@ -609,7 +572,7 @@ def view_hunter_radar():
         geo_brokers = target_geo[target_geo['IsGeo'] & (target_geo['Net'].abs() > 10000)].sort_values('Net', ascending=False)
         if not geo_brokers.empty:
             geo_show = geo_brokers[['Broker', 'Net', 'BuyAvg']].copy()
-            geo_show['Net'] /= 1000
+            geo_show['Net'] = geo_show['Net'] / 1000
             geo_show.columns = ['地緣券商', '淨買賣(張)', '均價']
             st.dataframe(geo_show.style.format("{:.1f}", subset=['淨買賣(張)']).applymap(color_pnl, subset=['淨買賣(張)']), use_container_width=True, hide_index=True)
         else: st.success("✅ 安靜。")
@@ -618,14 +581,14 @@ def view_hunter_radar():
     if 'daily_data' in st.session_state:
         df_gang = st.session_state['daily_data'].copy()
         df_gang['Gang'] = df_gang['Broker'].apply(check_gang_id)
-        df_gang['Net_Z'] = (df_gang['Net']/1000).round(1)
-        df_gang['Info'] = df_gang['Broker'] + ": " + df_gang['Net_Z'].astype(str) + "張"
+        df_gang['Net_Zhang'] = (df_gang['Net']/1000).round(1)
+        df_gang['Info'] = df_gang['Broker'] + ": " + df_gang['Net_Zhang'].astype(str) + "張"
         
         gang_stats = df_gang.groupby('Gang').agg({'Net': 'sum', 'Info': lambda x: '<br>'.join(x.tolist())}).reset_index().sort_values('Net', ascending=False)
-        gang_stats['Net_Z'] = gang_stats['Net'] / 1000
+        gang_stats['Net_Zhang'] = gang_stats['Net'] / 1000
         
-        fig_g = px.bar(gang_stats, x='Net_Z', y='Gang', orientation='h', text_auto='.1f', 
-                       title="幫派淨買賣", color='Net_Z', color_continuous_scale='RdYlGn',
+        fig_g = px.bar(gang_stats, x='Net_Zhang', y='Gang', orientation='h', text_auto='.1f', 
+                       title="幫派淨買賣", color='Net_Zhang', color_continuous_scale='RdYlGn',
                        custom_data=['Info'])
         
         fig_g.update_traces(
@@ -803,78 +766,89 @@ def view_broker_detective():
         st.dataframe(show.style.format("{:.1f}", subset=['買進(張)','賣出(張)','淨買賣(張)']).format("{:.2f}", subset=['買均','收盤']).background_gradient(subset=['淨買賣(張)'], cmap='RdYlGn'), use_container_width=True, hide_index=True)
 
 # ============================================
-# 10. 視圖：📂 批量匯入 (完全版程式碼)
+# 10. 視圖：📂 批量匯入 (完全版程式碼 - 包含社長專用密碼)
 # ============================================
 def view_batch_import():
     st.header("📂 批量匯入")
-    tab1, tab2 = st.tabs(["🚀 本機掃描 (推薦)", "📤 拖曳上傳"])
     
-    # --- 本機掃描模式 ---
-    with tab1:
-        st.info("此模式適用於您的電腦上已經有一堆 CSV 檔案，想一次全部讀進來。")
-        folder_path = st.text_input("請輸入 CSV 資料夾路徑", value=os.getcwd())
+    # [新增] 只有輸入正確密碼，才會顯示上傳與清洗按鈕
+    admin_pwd = st.sidebar.text_input("社長管理密碼", type="password")
+    
+    if admin_pwd == "8888":
+        st.success("🔓 管理員權限已解鎖")
+        tab1, tab2, tab3 = st.tabs(["🚀 本機掃描", "📤 拖曳上傳", "🛠️ 資料庫維護"])
         
-        if st.button("🚀 開始掃描並匯入"):
-            if os.path.isdir(folder_path):
-                files = glob.glob(os.path.join(folder_path, "*.csv"))
-                if files:
-                    progress_bar = st.progress(0)
-                    all_dfs = []
-                    status_text = st.empty()
-                    
-                    for i, fp in enumerate(files):
-                        file_name = os.path.basename(fp)
-                        status_text.text(f"正在處理 ({i+1}/{len(files)}): {file_name}")
+        # --- 本機掃描模式 ---
+        with tab1:
+            st.info("此模式適用於您的電腦上已經有一堆 CSV 檔案，想一次全部讀進來。")
+            folder_path = st.text_input("請輸入 CSV 資料夾路徑", value=os.getcwd())
+            
+            if st.button("🚀 開始掃描並匯入"):
+                if os.path.isdir(folder_path):
+                    files = glob.glob(os.path.join(folder_path, "*.csv"))
+                    if files:
+                        progress_bar = st.progress(0)
+                        all_dfs = []
+                        status_text = st.empty()
                         
-                        try:
-                            agg, _ = process_local_file(fp)
-                            if agg is not None:
-                                all_dfs.append(agg)
-                        except Exception as e:
-                            st.error(f"檔案 {file_name} 匯入失敗: {e}")
-                            
-                        progress_bar.progress((i+1)/len(files))
-                    
-                    if all_dfs:
-                        with st.spinner("正在合併並寫入資料庫..."):
-                            final_df = pd.concat(all_dfs, ignore_index=True)
-                            save_to_db(final_df)
-                        st.success(f"🎉 成功匯入 {len(all_dfs)} 個檔案！資料庫已更新。")
-                    else:
-                        st.warning("沒有成功解析任何 CSV 檔案，請檢查檔案格式。")
-                else:
-                    st.warning("❌ 找不到任何 CSV 檔案，請確認路徑是否正確。")
-            else:
-                st.error("❌ 路徑無效，請輸入正確的資料夾路徑。")
+                        for i, fp in enumerate(files):
+                            file_name = os.path.basename(fp)
+                            status_text.text(f"正在處理 ({i+1}/{len(files)}): {file_name}")
+                            try:
+                                agg, _ = process_local_file(fp)
+                                if agg is not None: all_dfs.append(agg)
+                            except: pass
+                            progress_bar.progress((i+1)/len(files))
+                        
+                        if all_dfs:
+                            with st.spinner("正在合併並寫入資料庫..."):
+                                final_df = pd.concat(all_dfs, ignore_index=True)
+                                save_to_db(final_df)
+                            st.success(f"🎉 成功匯入 {len(all_dfs)} 個檔案！")
+                        else: st.warning("沒有成功解析任何 CSV 檔案。")
+                    else: st.warning("❌ 找不到任何 CSV 檔案。")
+                else: st.error("❌ 路徑無效。")
 
-    # --- 拖曳上傳模式 ---
-    with tab2:
-        st.info("將您的 CSV 檔案直接拖曳到下方區域即可。")
-        uploaded_files = st.file_uploader("選擇多個 CSV 檔案", type=['csv'], accept_multiple_files=True)
-        
-        if uploaded_files and st.button("📥 解析並匯入選取檔案"):
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            all_dfs = []
+        # --- 拖曳上傳模式 ---
+        with tab2:
+            st.info("將您的 CSV 檔案直接拖曳到下方區域即可。")
+            uploaded_files = st.file_uploader("選擇多個 CSV 檔案", type=['csv'], accept_multiple_files=True)
             
-            for i, f in enumerate(uploaded_files):
-                status_text.text(f"正在處理 ({i+1}/{len(uploaded_files)}): {f.name}")
-                try:
-                    agg, _ = process_uploaded_file(f)
-                    if agg is not None:
-                        all_dfs.append(agg)
-                except Exception as e:
-                    st.error(f"檔案 {f.name} 解析失敗: {e}")
+            if uploaded_files and st.button("📥 解析並匯入選取檔案"):
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                all_dfs = []
                 
-                progress_bar.progress((i+1)/len(uploaded_files))
-            
-            if all_dfs:
-                with st.spinner("正在合併並寫入資料庫..."):
-                    final_df = pd.concat(all_dfs, ignore_index=True)
-                    save_to_db(final_df)
-                st.success(f"🎉 成功匯入 {len(all_dfs)} 個檔案！資料庫已更新。")
-            else:
-                st.error("❌ 所有檔案解析失敗，請確認檔案格式是否正確。")
+                for i, f in enumerate(uploaded_files):
+                    status_text.text(f"正在處理 ({i+1}/{len(uploaded_files)}): {f.name}")
+                    try:
+                        agg, _ = process_uploaded_file(f)
+                        if agg is not None: all_dfs.append(agg)
+                    except: pass
+                    progress_bar.progress((i+1)/len(uploaded_files))
+                
+                if all_dfs:
+                    with st.spinner("正在合併並寫入資料庫..."):
+                        final_df = pd.concat(all_dfs, ignore_index=True)
+                        save_to_db(final_df)
+                    st.success(f"🎉 成功匯入 {len(all_dfs)} 個檔案！")
+                else: st.error("❌ 所有檔案解析失敗。")
+        
+        # --- 資料庫維護 ---
+        with tab3:
+            st.warning("若發現舊資料有亂碼，可點擊此按鈕手動清洗 (需時較久)。")
+            if st.button("🛠️ 執行深度清洗"):
+                if os.path.exists(CSV_FILE):
+                    try:
+                        with st.spinner("正在掃描與清洗..."):
+                            df = pd.read_csv(CSV_FILE)
+                            if 'Broker' in df.columns:
+                                df['Broker'] = df['Broker'].apply(clean_broker_name)
+                                df.to_csv(CSV_FILE, index=False, encoding='utf-8-sig')
+                        st.success("清洗完成！")
+                    except Exception as e: st.error(f"失敗: {e}")
+    else:
+        st.info("👋 歡迎來到到樂社戰情室！此區域僅供社長管理資料使用。")
 
 # ============================================
 # Main Loop (功能導航)
@@ -882,18 +856,24 @@ def view_batch_import():
 def main():
     with st.sidebar:
         st.title("🦅 Phoenix V52")
-        st.caption("誠意完全版")
+        st.caption("安全特仕版")
         st.markdown("---")
-        choice = st.radio("功能選單", [
+        
+        # 預設不顯示批量匯入，除非輸入密碼解鎖
+        menu_options = [
             "🏠 總司令儀表板", 
             "🧠 AI 戰略實驗室", 
             "📈 趨勢戰情室", 
             "🔍 獵殺雷達", 
             "📉 籌碼斷層", 
             "🕵️‍♂️ 分點偵探", 
-            "🏆 贏家與韭菜名人堂", 
-            "📂 批量匯入"
-        ])
+            "🏆 贏家與韭菜名人堂"
+        ]
+        
+        # 這裡判斷是否顯示批量匯入 (簡單版：直接放在最後一個選項，點進去要密碼)
+        menu_options.append("📂 批量匯入")
+        
+        choice = st.radio("功能選單", menu_options)
         st.markdown("---")
         st.info("System Ready")
     
