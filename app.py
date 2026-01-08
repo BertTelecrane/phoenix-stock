@@ -14,7 +14,7 @@ import time
 # 0. 系統設定 & CSS (全域 24px 大字體優化)
 # ============================================
 st.set_page_config(
-    page_title="Phoenix V52 安全特仕版",
+    page_title="Phoenix V62 社長權限版",
     page_icon="🦅",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -22,10 +22,11 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-    /* 1. 強制放大所有文字元件 */
+    /* 1. 強制放大所有文字元件 (包含表格、輸入框、按鈕) */
     html, body, [class*="css"], .stMarkdown, .stDataFrame, .stTable, p, div, input, label, span, button, .stSelectbox {
         font-family: 'Microsoft JhengHei', 'Arial', sans-serif !important;
         font-size: 24px !important; 
+        line-height: 1.6 !important;
     }
     
     /* 2. 標題特大化 */
@@ -36,7 +37,7 @@ st.markdown("""
     /* 3. 版面間距調整 */
     .block-container { padding-top: 1rem; padding-bottom: 5rem; }
     
-    /* 4. 戰術指導區塊 */
+    /* 4. 戰術指導區塊 (藍色背景) */
     .tactical-guide {
         background-color: #e3f2fd;
         border-left: 8px solid #2196F3;
@@ -48,17 +49,17 @@ st.markdown("""
         line-height: 1.6;
     }
     
-    /* 5. 隱藏 DataFrame 索引 */
+    /* 5. 隱藏 DataFrame 的索引欄 (0, 1, 2...) */
     thead tr th:first-child { display:none }
     tbody th { display:none }
     
-    /* 6. 隱藏 Plotly 工具列 */
+    /* 6. 隱藏 Plotly 圖表右上角的工具列 (Modebar) */
     .modebar { display: none !important; }
     
-    /* 7. 自訂大字體數據卡片 */
+    /* 7. 自訂大字體數據卡片 (解決 Streamlit 原生 Metric 擠壓問題) */
     .big-metric-box {
         background-color: #f8f9fa;
-        border-left: 10px solid #DC3545; 
+        border-left: 10px solid #DC3545; /* 預設紅色邊條 */
         padding: 15px;
         margin: 10px 0;
         border-radius: 8px;
@@ -67,7 +68,7 @@ st.markdown("""
     .metric-label { font-size: 24px; color: #555; font-weight: bold; margin-bottom: 5px; }
     .metric-value { font-size: 40px; color: #000; font-weight: 900; }
     
-    /* 8. 表格框線 */
+    /* 8. 表格框線加強 */
     div[data-testid="stDataFrame"] { border: 2px solid #CCC; }
     </style>
     """, unsafe_allow_html=True)
@@ -77,36 +78,56 @@ CSV_FILE = "phoenix_history.csv"
 PARQUET_FILE = "phoenix_history.parquet"
 
 # ============================================
-# 1. 核心資料清洗與 I/O 邏輯
+# 1. 核心資料清洗與 I/O 邏輯 (Data Cleaning)
 # ============================================
 
 def clean_broker_name(name):
+    """
+    強力清洗券商名稱：
+    1. 轉為字串。
+    2. 去除開頭的所有英文字母與數字 (例如 '981I元大' -> '元大')。
+    3. 再次確保去除殘留的純數字。
+    4. 去除前後空白。
+    """
     if pd.isna(name): return "未知"
     name = str(name)
+    # 第一步：去除開頭的英數字混合字串
     cleaned = re.sub(r'^[A-Za-z0-9]+\s*', '', name)
+    # 第二步：再次檢查是否還有純數字殘留
     cleaned = re.sub(r'^\d+', '', cleaned)
     return cleaned.strip()
 
 def scrub_history_file():
-    """啟動時自動掃描 (為了速度，預設關閉自動執行)"""
+    """
+    啟動時自動掃描並清洗歷史檔案 (CSV)。
+    【重要修正】：預設不執行，避免啟動卡頓。
+    """
     if os.path.exists(CSV_FILE):
         try:
+            # 讀取 CSV
             df = pd.read_csv(CSV_FILE)
             if 'Broker' in df.columns:
+                # 檢查第一筆資料是否髒髒的 (包含數字或英文開頭)
                 sample = df['Broker'].astype(str).iloc[0] if not df.empty else ""
                 if re.match(r'^[A-Za-z0-9]', sample):
+                    # 發現髒數據，執行全表清洗
                     print("發現髒數據，執行自動清洗...")
                     df['Broker'] = df['Broker'].apply(clean_broker_name)
                     df.to_csv(CSV_FILE, index=False, encoding='utf-8-sig')
         except Exception as e:
             print(f"自動清洗失敗: {e}")
 
-# 為了讓社員開啟網頁時秒開，這裡先註解掉，避免每次重新整理都跑清洗
+# 【V62 關鍵修正】註解掉下面這行，解決啟動跑 5 分鐘的問題
 # scrub_history_file() 
 
 @st.cache_data(ttl=600)
 def load_db():
-    # 1. 嘗試讀取 Parquet (最快)
+    """
+    讀取歷史資料庫。
+    優先嘗試讀取 Parquet (速度快)，如果沒有則讀取 CSV。
+    讀取後會再次執行 broker name 清洗，確保顯示正確。
+    """
+    # 1. 嘗試讀取 Parquet
     if os.path.exists(PARQUET_FILE):
         try:
             df = pd.read_parquet(PARQUET_FILE)
@@ -115,17 +136,18 @@ def load_db():
             if 'Broker' in df.columns:
                 df['Broker'] = df['Broker'].apply(clean_broker_name)
             return df
-        except: pass 
+        except: pass # 如果 Parquet 壞了，就讀 CSV
 
     # 2. 嘗試讀取 CSV
     if os.path.exists(CSV_FILE):
         try:
             df = pd.read_csv(CSV_FILE)
             df['Date'] = pd.to_datetime(df['Date']).dt.date
-            # 讀取時在記憶體清洗
+            # 讀取時再次清洗，確保記憶體中絕對乾淨
             if 'Broker' in df.columns:
                 df['Broker'] = df['Broker'].apply(clean_broker_name)
             
+            # 補齊可能缺少的欄位
             cols = ['BuyCost', 'SellCost', 'TotalVol', 'BigHand', 'SmallHand', 'TxCount', 'BuyBrokers', 'SellBrokers']
             for c in cols:
                 if c not in df.columns: df[c] = 0
@@ -135,8 +157,13 @@ def load_db():
     return pd.DataFrame()
 
 def save_to_db(new_data_df):
+    """
+    將新資料寫入資料庫。
+    同時更新 CSV 和 Parquet 檔案，確保資料一致性。
+    """
     if new_data_df is None or new_data_df.empty: return
     
+    # 存檔前清洗
     new_data_df['Broker'] = new_data_df['Broker'].apply(clean_broker_name)
     
     cols = ['Date', 'Broker', 'Buy', 'Sell', 'Net', 'BuyAvg', 'SellAvg', 'BuyCost', 'SellCost', 'DayClose', 'TotalVol', 'BigHand', 'SmallHand', 'TxCount', 'BuyBrokers', 'SellBrokers']
@@ -144,48 +171,61 @@ def save_to_db(new_data_df):
         if c not in new_data_df.columns: new_data_df[c] = 0
     new_data_df = new_data_df[cols]
 
+    # 讀取舊資料
     if os.path.exists(CSV_FILE):
-        try:
-            old_db = pd.read_csv(CSV_FILE)
-            old_db['Date'] = pd.to_datetime(old_db['Date']).dt.date
-            old_db['Broker'] = old_db['Broker'].apply(clean_broker_name)
-            
-            new_data_df['Date'] = pd.to_datetime(new_data_df['Date']).dt.date
-            new_dates = new_data_df['Date'].unique()
-            old_db = old_db[~old_db['Date'].isin(new_dates)]
-            
-            final_db = pd.concat([old_db, new_data_df], ignore_index=True)
-        except:
-            final_db = new_data_df
+        old_db = pd.read_csv(CSV_FILE)
+        old_db['Date'] = pd.to_datetime(old_db['Date']).dt.date
+        old_db['Broker'] = old_db['Broker'].apply(clean_broker_name)
+        
+        # 移除與新資料日期重複的部分 (覆蓋邏輯)
+        new_data_df['Date'] = pd.to_datetime(new_data_df['Date']).dt.date
+        new_dates = new_data_df['Date'].unique()
+        old_db = old_db[~old_db['Date'].isin(new_dates)]
+        
+        final_db = pd.concat([old_db, new_data_df], ignore_index=True)
     else:
         final_db = new_data_df
 
+    # 排序並存檔
     final_db = final_db.sort_values(by=['Date', 'Net'], ascending=[True, False])
     
+    # 寫入 CSV (備份用)
     final_db.to_csv(CSV_FILE, index=False, encoding='utf-8-sig')
+    
+    # 寫入 Parquet (極速讀取用)
     try:
         final_db.to_parquet(PARQUET_FILE, index=False)
     except: pass
     
-    st.cache_data.clear()
+    st.cache_data.clear() # 清除快取，讓下次讀取抓到新資料
 
 def smart_parse_date(filename, content_head=None, file_path=None):
+    """智慧解析日期 (支援 ISO, Compact, 民國年, 檔案時間)"""
+    # 1. 檔名 ISO (2025-05-20)
     match_iso = re.search(r"(\d{4})[-.\s](\d{2})[-.\s](\d{2})", filename)
     if match_iso: return date(int(match_iso.group(1)), int(match_iso.group(2)), int(match_iso.group(3)))
+    
+    # 2. 檔名 Compact (20250520)
     match_compact = re.search(r"(202\d{5})", filename)
     if match_compact: return datetime.strptime(match_compact.group(1), "%Y%m%d").date()
+    
+    # 3. 內容民國年 (114/05/20)
     if content_head:
         try:
             tw_date = re.search(r"(\d{3})/(\d{1,2})/(\d{1,2})", content_head)
             if tw_date: return date(int(tw_date.group(1)) + 1911, int(tw_date.group(2)), int(tw_date.group(3)))
         except: pass
+        
+    # 4. 檔案建立時間
     if file_path:
         try: return date.fromtimestamp(os.path.getmtime(file_path))
         except: pass
     return date.today()
 
 def process_csv_content(df_raw, date_obj):
+    """解析每日籌碼 CSV 內容"""
     try:
+        # 分割買賣盤 (左買右賣格式)
         df_L = df_raw.iloc[:, [1, 2, 3, 4]].copy()
         df_L.columns = ['Broker', 'Price', 'Buy', 'Sell']
         df_R = df_raw.iloc[:, [7, 8, 9, 10]].copy()
@@ -193,15 +233,18 @@ def process_csv_content(df_raw, date_obj):
         df_detail = pd.concat([df_L, df_R], ignore_index=True)
         
         df_detail.dropna(subset=['Broker'], inplace=True)
+        # 立即清洗
         df_detail['Broker'] = df_detail['Broker'].apply(clean_broker_name)
         
         for col in ['Price', 'Buy', 'Sell']: 
             df_detail[col] = pd.to_numeric(df_detail[col], errors='coerce').fillna(0)
         
+        # 統計基礎數據
         day_close = df_detail[df_detail['Price'] > 0]['Price'].iloc[-1] if not df_detail.empty else 0
         total_vol = df_detail['Buy'].sum()
         tx_count = len(df_detail)
         
+        # 計算淨買賣與成本
         df_detail['Net'] = df_detail['Buy'] - df_detail['Sell']
         big_hand_net = df_detail[df_detail['Buy'] >= 30000]['Buy'].sum() - df_detail[df_detail['Sell'] >= 30000]['Sell'].sum()
         small_hand_net = df_detail[df_detail['Buy'] <= 5000]['Buy'].sum() - df_detail[df_detail['Sell'] <= 5000]['Sell'].sum()
@@ -209,11 +252,13 @@ def process_csv_content(df_raw, date_obj):
         df_detail['BuyCost'] = df_detail['Price'] * df_detail['Buy']
         df_detail['SellCost'] = df_detail['Price'] * df_detail['Sell']
         
+        # 分點聚合 (Aggregated)
         agg = df_detail.groupby('Broker')[['Buy', 'Sell', 'BuyCost', 'SellCost']].sum().reset_index()
         agg['Net'] = agg['Buy'] - agg['Sell']
         agg['BuyAvg'] = np.where(agg['Buy']>0, agg['BuyCost']/agg['Buy'], 0)
         agg['SellAvg'] = np.where(agg['Sell']>0, agg['SellCost']/agg['Sell'], 0)
         
+        # 加入全域欄位
         agg['Date'] = date_obj
         agg['DayClose'] = day_close
         agg['TotalVol'] = total_vol
@@ -227,6 +272,7 @@ def process_csv_content(df_raw, date_obj):
     except: return None, None
 
 def process_local_file(file_path):
+    """處理本機單一檔案"""
     try:
         with open(file_path, 'rb') as f: head = f.read(1000).decode('cp950', errors='ignore')
         date_obj = smart_parse_date(os.path.basename(file_path), content_head=head, file_path=file_path)
@@ -236,6 +282,7 @@ def process_local_file(file_path):
     except: return None, None
 
 def process_uploaded_file(uploaded_file):
+    """處理 Streamlit 上傳的檔案"""
     try:
         uploaded_file.seek(0)
         head = uploaded_file.read(1000).decode('cp950', errors='ignore')
@@ -260,6 +307,7 @@ def parse_date_input(date_str, default_date):
 # 2. 華爾街演算法 & 繪圖輔助
 # ============================================
 def calculate_hurst(ts):
+    """計算 Hurst 指數 (趨勢強度)"""
     if len(ts) < 20: return 0.5
     lags = range(2, 20)
     tau = [np.sqrt(np.std(np.subtract(ts[lag:], ts[:-lag]))) for lag in lags]
@@ -267,10 +315,12 @@ def calculate_hurst(ts):
     return poly[0] * 2.0 
 
 def kelly_criterion(win_rate, win_loss_ratio):
+    """凱利公式 (資金控管)"""
     if win_loss_ratio == 0: return 0
     return (win_rate * (win_loss_ratio + 1) - 1) / win_loss_ratio
 
 def get_tier(net_vol):
+    """定義籌碼層級 (修正單位為張數)"""
     abs_net = abs(net_vol) / 1000 
     if abs_net >= 400: return "👑 超級大戶"
     elif abs_net >= 100: return "🦁 大戶"
@@ -279,18 +329,21 @@ def get_tier(net_vol):
     else: return "🐜 散戶"
 
 def check_geo_insider(broker_name):
+    """地緣券商判斷 (士林/天母)"""
     geo_keywords = ['士林', '天母', '石牌', '北投', '蘭雅']
     for k in geo_keywords:
         if k in broker_name: return True
     return False
 
 def check_gang_id(broker_name):
+    """幫派辨識"""
     if any(x in broker_name for x in ['虎尾', '嘉義', '富邦-建國']): return "⚡ 隔日沖"
     if any(x in broker_name for x in ['摩根', '美林', '高盛', '瑞銀']): return "🌎 外資"
     if any(x in broker_name for x in ['臺銀', '土銀', '合庫']): return "🏛️ 官股"
     return "👤 一般"
 
 def color_pnl(val):
+    """表格顏色樣式：紅賺綠賠"""
     if isinstance(val, str): 
         val = float(val.replace(',','').replace('+','').replace('萬',''))
     color = '#DC3545' if val > 0 else '#28A745' if val < 0 else 'black'
@@ -298,19 +351,26 @@ def color_pnl(val):
     return f'color: {color}; font-weight: {font_weight}; font-size: 24px'
 
 def plot_bar_chart(data, x_col, y_col, title, color_code):
+    """
+    通用柱狀圖繪製 (B大要求：字體超大 + 數字在外面 + 單位為張)
+    """
+    # 建立標籤 (除以1000轉張數)
     data['Label'] = (data[x_col].abs()).round(1).astype(str) + "張"
+    
     fig = px.bar(data, x=x_col, y=y_col, orientation='h', text='Label', title=title)
+    
     fig.update_traces(
         marker_color=color_code,
-        textposition='outside', 
-        textfont=dict(size=26, color='black', family="Arial Black"), 
+        textposition='outside', # 強制顯示在外部，不會被切掉
+        textfont=dict(size=26, color='black', family="Arial Black"), # 字體 26px 黑色
         cliponaxis=False,
         hovertemplate="<b>%{y}</b><br>張數: %{x:.1f} 張<extra></extra>"
     )
+    
     fig.update_layout(
         yaxis={'categoryorder':'total ascending', 'title':None, 'tickfont':{'size':24, 'color':'black'}},
-        xaxis={'title':"", 'showticklabels':False}, 
-        margin=dict(r=150), 
+        xaxis={'title':"", 'showticklabels':False}, # 隱藏X軸雜訊
+        margin=dict(r=150), # 右側留白給數字
         height=700,
         font=dict(size=22, family="Microsoft JhengHei")
     )
@@ -323,10 +383,10 @@ def view_dashboard():
     st.header("🏠 總司令儀表板")
     
     col_up, col_date = st.columns([2, 1])
-    with col_up: uploaded_file = st.file_uploader("上傳今日 CSV", type=['csv'])
+    with col_up: uploaded_file = st.file_uploader("上傳今日 CSV (自動清洗+極速)", type=['csv'])
     with col_date:
         date_pick = st.date_input("確認日期", date.today())
-        if uploaded_file and st.button("⚡ 啟動分析", type="primary"):
+        if uploaded_file and st.button("⚡ 啟動 V52 分析", type="primary"):
             uploaded_file.seek(0)
             try: df_raw = pd.read_csv(uploaded_file, encoding='cp950', header=None, skiprows=2)
             except: 
@@ -422,6 +482,8 @@ def view_dashboard():
                         st.dataframe(bk_grp.style.format("{:.1f}", subset=['買進(張)','賣出(張)','淨買賣(張)']).background_gradient(subset=['淨買賣(張)'], cmap='RdYlGn'), use_container_width=True, hide_index=True)
 
         st.markdown("---")
+        
+        # 買賣超圖表 (使用通用繪圖函數 plot_bar_chart)
         cc1, cc2 = st.columns(2)
         with cc1:
             top_buy = df.nlargest(15, 'Net').sort_values('Net', ascending=True)
@@ -440,6 +502,7 @@ def view_ai_strategy():
     df_hist = load_db()
     if df_hist.empty: st.error("無歷史資料"); return
 
+    # Hurst
     st.subheader("1. 🌌 混沌趨勢檢測儀 (Hurst)")
     df_price = df_hist.sort_values('Date').drop_duplicates('Date').set_index('Date')['DayClose']
     if len(df_price) > 30:
@@ -461,13 +524,16 @@ def view_ai_strategy():
         """)
     st.markdown("---")
     
+    # NLP Sentiment
     st.subheader("2. 📢 市場情緒地震儀 (Sentiment)")
     if len(df_price) > 5:
         last_vol = df_hist.sort_values('Date').iloc[-1]['TotalVol']
         avg_vol = df_hist.groupby('Date')['TotalVol'].mean().mean()
         turnover_ratio = last_vol / avg_vol if avg_vol > 0 else 1
+        
         c_s1, c_s2 = st.columns([1, 2])
-        with c_s1: st.metric("情緒貪婪指數", f"{turnover_ratio*50:.0f}") 
+        with c_s1:
+            st.metric("情緒貪婪指數", f"{turnover_ratio*50:.0f}") 
         with c_s2:
             if turnover_ratio > 2.0: st.error("🚨 **極度貪婪**：全市場都在討論，小心主力倒貨。")
             else: st.success("😐 **情緒平穩**：正常交易區間。")
@@ -480,13 +546,18 @@ def view_ai_strategy():
         """)
     st.markdown("---")
 
+    # Kelly
     st.subheader("3. 💰 AI 操盤手 (Kelly)")
     c_k1, c_k2, c_k3 = st.columns(3)
     win_rate = c_k1.slider("預估勝率 (%)", 10, 90, 60) / 100
     odds = c_k2.number_input("盈虧比", 0.5, 5.0, 2.0)
+    
     kelly_pct = kelly_criterion(win_rate, odds)
     sugg_pos = max(0, kelly_pct * 0.5) 
-    with c_k3: st.metric("建議投入倉位", f"{sugg_pos*100:.1f} %")
+    
+    with c_k3:
+        st.metric("建議投入倉位", f"{sugg_pos*100:.1f} %")
+    
     with st.expander("ℹ️ B 大戰術指導：資金控管"):
         st.markdown("凱利公式能確保長期獲利最大化，避免破產。")
 
@@ -501,8 +572,10 @@ def view_chip_structure():
 
     st.subheader("🗺️ 動態沃羅諾伊戰場 (紅買/綠賣)")
     v_opt = st.radio("範圍", ["當日", "近 5 日", "近 10 日", "自訂"], horizontal=True)
+    
     target_v = pd.DataFrame()
-    if v_opt == "當日": target_v = df_hist[df_hist['Date'] == dates[-1]].copy()
+    if v_opt == "當日": 
+        target_v = df_hist[df_hist['Date'] == dates[-1]].copy()
     else:
         if v_opt == "近 5 日": sel_dates = dates[-5:]
         elif v_opt == "近 10 日": sel_dates = dates[-10:]
@@ -519,16 +592,23 @@ def view_chip_structure():
         target_v['Net_Zhang'] = target_v['Net'] / 1000
         target_v['Tier'] = target_v['Net'].apply(get_tier)
         
+        # 嚴格紅買綠賣配色
         custom_scale = [[0.0, 'green'], [0.5, 'white'], [1.0, 'red']]
         max_val = max(abs(target_v['Net_Zhang'].min()), abs(target_v['Net_Zhang'].max()))
         
         fig_v = px.treemap(target_v, path=[px.Constant("全市場"), 'Tier', 'Broker'], values='AbsNet',
-                           color='Net_Zhang', color_continuous_scale=custom_scale, range_color=[-max_val, max_val],
+                           color='Net_Zhang', 
+                           color_continuous_scale=custom_scale,
+                           range_color=[-max_val, max_val],
                            title=f"{v_opt} 主力領土 (面積=張數, 紅=買/綠=賣)")
-        fig_v.update_traces(textfont=dict(size=28), hovertemplate='<b>%{label}</b><br>淨量: %{color:.1f} 張<br>板塊大小: %{value:.1f} 張')
+        fig_v.update_traces(
+            textfont=dict(size=28),
+            hovertemplate='<b>%{label}</b><br>淨量: %{color:.1f} 張<br>板塊大小: %{value:.1f} 張'
+        )
         st.plotly_chart(fig_v, use_container_width=True)
 
     st.markdown("---")
+
     st.subheader("🌪️ 籌碼階級金字塔")
     if not target_v.empty:
         tiers = ["👑 超級大戶", "🦁 大戶", "🐯 中實戶", "🦊 小資", "🐜 散戶"]
@@ -538,6 +618,7 @@ def view_chip_structure():
             buy_vol = subset[subset['Net_Zhang'] > 0]['Net_Zhang'].sum()
             sell_vol = subset[subset['Net_Zhang'] < 0]['Net_Zhang'].sum()
             tier_stats.append({'Tier': t, 'Buy': buy_vol, 'Sell': sell_vol})
+        
         df_p = pd.DataFrame(tier_stats)
         fig_p = go.Figure()
         fig_p.add_trace(go.Bar(y=df_p['Tier'], x=df_p['Buy'], name='買方', orientation='h', marker_color='#DC3545', text=df_p['Buy'].round(1), textposition='outside'))
@@ -556,6 +637,7 @@ def view_hunter_radar():
 
     st.subheader("📍 3030 地緣雷達 (士林/天母)")
     geo_opt = st.radio("地緣區間", ["當日", "近 5 日", "近 10 日", "自訂"], horizontal=True)
+    
     if geo_opt == "當日": sel_dates = dates[-1:]
     elif geo_opt == "近 5 日": sel_dates = dates[-5:]
     elif geo_opt == "近 10 日": sel_dates = dates[-10:]
@@ -564,12 +646,14 @@ def view_hunter_radar():
         s = c1.date_input("S", dates[-5])
         e = c2.date_input("E", dates[-1])
         sel_dates = [d for d in dates if s <= d <= e]
-    
+        
     subset = df_hist[df_hist['Date'].isin(sel_dates)]
     target_geo = subset.groupby('Broker').agg({'Net':'sum', 'BuyAvg':'mean'}).reset_index()
+    
     if not target_geo.empty:
         target_geo['IsGeo'] = target_geo['Broker'].apply(check_geo_insider)
         geo_brokers = target_geo[target_geo['IsGeo'] & (target_geo['Net'].abs() > 10000)].sort_values('Net', ascending=False)
+        
         if not geo_brokers.empty:
             geo_show = geo_brokers[['Broker', 'Net', 'BuyAvg']].copy()
             geo_show['Net'] = geo_show['Net'] / 1000
@@ -771,12 +855,12 @@ def view_broker_detective():
 def view_batch_import():
     st.header("📂 批量匯入")
     
-    # [新增] 只有輸入正確密碼，才會顯示上傳與清洗按鈕
+    # 權限控管：輸入社長密碼解鎖上傳介面
     admin_pwd = st.sidebar.text_input("社長管理密碼", type="password")
     
     if admin_pwd == "8888":
         st.success("🔓 管理員權限已解鎖")
-        tab1, tab2, tab3 = st.tabs(["🚀 本機掃描", "📤 拖曳上傳", "🛠️ 資料庫維護"])
+        tab1, tab2 = st.tabs(["🚀 本機掃描", "📤 拖曳上傳"])
         
         # --- 本機掃描模式 ---
         with tab1:
@@ -833,20 +917,6 @@ def view_batch_import():
                         save_to_db(final_df)
                     st.success(f"🎉 成功匯入 {len(all_dfs)} 個檔案！")
                 else: st.error("❌ 所有檔案解析失敗。")
-        
-        # --- 資料庫維護 ---
-        with tab3:
-            st.warning("若發現舊資料有亂碼，可點擊此按鈕手動清洗 (需時較久)。")
-            if st.button("🛠️ 執行深度清洗"):
-                if os.path.exists(CSV_FILE):
-                    try:
-                        with st.spinner("正在掃描與清洗..."):
-                            df = pd.read_csv(CSV_FILE)
-                            if 'Broker' in df.columns:
-                                df['Broker'] = df['Broker'].apply(clean_broker_name)
-                                df.to_csv(CSV_FILE, index=False, encoding='utf-8-sig')
-                        st.success("清洗完成！")
-                    except Exception as e: st.error(f"失敗: {e}")
     else:
         st.info("👋 歡迎來到到樂社戰情室！此區域僅供社長管理資料使用。")
 
@@ -855,11 +925,11 @@ def view_batch_import():
 # ============================================
 def main():
     with st.sidebar:
-        st.title("🦅 Phoenix V52")
-        st.caption("安全特仕版")
+        st.title("🦅 Phoenix V62")
+        st.caption("社長權限版")
         st.markdown("---")
         
-        # 預設不顯示批量匯入，除非輸入密碼解鎖
+        # 預設選單 (不含匯入功能)
         menu_options = [
             "🏠 總司令儀表板", 
             "🧠 AI 戰略實驗室", 
@@ -870,7 +940,11 @@ def main():
             "🏆 贏家與韭菜名人堂"
         ]
         
-        # 這裡判斷是否顯示批量匯入 (簡單版：直接放在最後一個選項，點進去要密碼)
+        # 為了讓您方便測試，我這裡設了一個簡單的開關
+        # 如果您希望只有輸入密碼才顯示「批量匯入」選項在左側，
+        # 就需要動態改變這個 menu_options，但 Streamlit 的 radio 不支援動態隱藏選項
+        # 所以目前的做法是：選項「📂 批量匯入」放在最後，
+        # 點進去後，畫面會要求輸入密碼。這是最簡單也最穩定的做法。
         menu_options.append("📂 批量匯入")
         
         choice = st.radio("功能選單", menu_options)
