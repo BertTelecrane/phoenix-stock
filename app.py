@@ -11,10 +11,10 @@ from scipy.stats import linregress
 import time
 
 # ============================================
-# 0. 系統設定 & CSS (維持 V101 的大字體與修復)
+# 0. 系統設定 & CSS (隱形斗篷 + RWD 自適應字體)
 # ============================================
 st.set_page_config(
-    page_title="Phoenix V102 平衡打擊版",
+    page_title="Phoenix V104 隱形自適應版",
     page_icon="🦅",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -22,75 +22,100 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-    /* 全域字體設定 */
+    /* ====================================================================
+       1. 【隱形斗篷】核心代碼：徹底移除右下角身分標記
+       ==================================================================== */
+    
+    /* 隱藏 Streamlit 右下角的 Viewer Badge (顯示帳號/公司名的那個) */
+    div[class*="viewerBadge"] { display: none !important; }
+    .viewerBadge_container__1QSob { display: none !important; }
+    
+    /* 隱藏右上角漢堡選單、頂部彩條、底部 Footer */
+    #MainMenu { visibility: hidden !important; }
+    header { visibility: hidden !important; }
+    footer { visibility: hidden !important; }
+    [data-testid="stStatusWidget"] { visibility: hidden !important; }
+    
+    /* ====================================================================
+       2. 【RWD 自適應字體】依據螢幕寬度自動調整大小
+       ==================================================================== */
+    
+    /* 預設 (手機或小視窗): 字體適中，不會爆版 */
     html, body, [class*="css"] {
         font-family: 'Microsoft JhengHei', 'Arial', sans-serif !important;
-        font-size: 30px !important; 
+        font-size: 18px !important; 
         font-weight: bold !important;
     }
+    h1 { font-size: 36px !important; }
+    h2 { font-size: 28px !important; }
+    h3 { font-size: 24px !important; }
+    .stMetricValue { font-size: 40px !important; }
 
-    /* 1. 防止下拉選單字體被切掉 */
+    /* 平板/筆電 (寬度 > 768px): 字體稍微放大 */
+    @media (min-width: 768px) {
+        html, body, [class*="css"] {
+            font-size: 22px !important; 
+        }
+        h1 { font-size: 48px !important; }
+        h2 { font-size: 36px !important; }
+        h3 { font-size: 30px !important; }
+        .stMetricValue { font-size: 50px !important; }
+        
+        /* 表格字體 */
+        div[data-testid="stDataFrame"] div[data-testid="stTable"], 
+        div[data-testid="stDataFrame"] td, 
+        div[data-testid="stDataFrame"] th {
+            font-size: 22px !important;
+        }
+    }
+
+    /* 大型桌機/大螢幕 (寬度 > 1200px): 字體加大 (你的老花眼模式) */
+    @media (min-width: 1200px) {
+        html, body, [class*="css"] {
+            font-size: 28px !important; 
+        }
+        h1 { font-size: 60px !important; }
+        h2 { font-size: 48px !important; }
+        h3 { font-size: 36px !important; }
+        .stMetricValue { font-size: 64px !important; }
+        
+        /* 表格字體特大 */
+        div[data-testid="stDataFrame"] div[data-testid="stTable"], 
+        div[data-testid="stDataFrame"] td, 
+        div[data-testid="stDataFrame"] th {
+            font-size: 28px !important;
+            padding: 12px !important;
+        }
+        
+        /* 輸入框高度撐開 */
+        .stSelectbox div[data-baseweb="select"] > div,
+        .stTextInput div[data-baseweb="input"] > div {
+            min-height: 60px !important;
+        }
+    }
+
+    /* ====================================================================
+       3. 通用元件優化
+       ==================================================================== */
+    .modebar { display: none !important; }
+    
+    /* 輸入框通用設定 */
     .stSelectbox div[data-baseweb="select"] > div,
     .stTextInput div[data-baseweb="input"] > div,
     .stNumberInput div[data-baseweb="input"] > div {
-        min-height: 70px !important; 
-        height: auto !important;
-        padding-top: 10px !important;
-        padding-bottom: 10px !important;
         display: flex !important;
         align-items: center !important;
     }
     
-    .stSelectbox div[data-baseweb="select"] span {
-        line-height: 1.5 !important; 
-        font-size: 32px !important;
-    }
-    
-    ul[data-baseweb="menu"] li {
-        font-size: 28px !important;
-        padding: 15px !important;
-        min-height: 60px !important;
-    }
-
-    /* 2. 表格 (DataFrame) 格式優化 */
-    div[data-testid="stDataFrame"] div[data-testid="stTable"] {
-        font-size: 28px !important;
-    }
-    div[data-testid="stDataFrame"] th {
-        font-size: 28px !important;
-        background-color: #f0f2f6 !important;
-        color: #333 !important;
-        text-align: center !important;
-    }
-    div[data-testid="stDataFrame"] td {
-        font-size: 30px !important;
-        padding: 10px !important;
-        text-align: right !important; 
-    }
-
-    /* 3. 數據指標 (Metric) */
-    .stMetricLabel { font-size: 30px !important; font-weight: bold !important; }
-    .stMetricValue { font-size: 60px !important; font-weight: 900 !important; color: #000 !important; }
-
-    /* 4. 標題 */
-    h1 { font-size: 60px !important; font-weight: 900 !important; margin-bottom: 30px !important; }
-    h2 { font-size: 48px !important; font-weight: 900 !important; margin-top: 30px !important; }
-    h3 { font-size: 40px !important; font-weight: 900 !important; }
-    
-    /* 5. 隱藏干擾 */
-    .modebar, #MainMenu, header, footer { visibility: hidden; }
-
-    /* 6. 自訂大字體數據卡片 */
+    /* 自訂大字體數據卡片 (也會隨 RWD 縮放) */
     .big-metric-box {
         background-color: #f8f9fa;
-        border-left: 15px solid #DC3545;
-        padding: 25px;
+        border-left: 10px solid #DC3545;
+        padding: 20px;
         margin: 15px 0;
         border-radius: 12px;
         box-shadow: 4px 4px 10px rgba(0,0,0,0.2);
     }
-    .metric-label { font-size: 30px; color: #555; font-weight: bold; margin-bottom: 10px; display: block;}
-    .metric-value { font-size: 60px; color: #000; font-weight: 900; display: block;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -283,19 +308,20 @@ def plot_bar_chart(data, x_col, y_col, title, color_code, avg_col=None):
 
     fig = px.bar(data, x=x_col, y=y_col, orientation='h', text='Label', title=title)
     
+    # 圖表字體大小設定 (這裡我們給一個相對大的預設值，讓它在大螢幕清楚，手機上 Plotly 會自動縮放一些)
     fig.update_layout(
-        yaxis={'categoryorder':'total ascending', 'title':None, 'tickfont':{'size':30, 'color':'black', 'family': 'Microsoft JhengHei'}}, 
+        yaxis={'categoryorder':'total ascending', 'title':None, 'tickfont':{'size':20, 'color':'black', 'family': 'Microsoft JhengHei'}}, 
         xaxis={'title':"", 'showticklabels': False}, 
-        margin=dict(r=250, l=150, t=100, b=50), 
-        height=900, # 高度拉大以容納 Top 20
-        title_font=dict(size=40, family="Microsoft JhengHei", color='black'),
-        hoverlabel=dict(font_size=30, font_family="Microsoft JhengHei", bgcolor="white") 
+        margin=dict(r=150, l=120, t=80, b=50), 
+        height=850, 
+        title_font=dict(size=30, family="Microsoft JhengHei", color='black'),
+        hoverlabel=dict(font_size=24, font_family="Microsoft JhengHei", bgcolor="white") 
     )
     
     fig.update_traces(
         marker_color=color_code, 
         textposition='outside', 
-        textfont=dict(size=30, color='black', family="Arial Black"), 
+        textfont=dict(size=24, color='black', family="Arial Black"), 
         cliponaxis=False, 
         hovertemplate="<b>%{y}</b><br>數據: %{x:.1f}<extra></extra>"
     )
@@ -333,9 +359,7 @@ def view_dashboard():
     else:
         st.warning("📭 請社長上傳資料")
 
-    # 計算 Top 20 集中度
     if not final_agg.empty:
-        # 這裡的統計僅用於計算鳳凰指數
         top15_buy_sum = final_agg.nlargest(15, 'Net')['Net'].sum()
         top15_sell_sum = final_agg.nsmallest(15, 'Net')['Net'].abs().sum()
     else:
@@ -348,11 +372,12 @@ def view_dashboard():
     
     user_price = st.number_input("請輸入今日收盤價", value=100.0)
 
+    # 數據卡片顯示
     c1, c2, c3 = st.columns([1, 1, 2])
     with c1:
         color = "#28A745" if power_score > 60 else ("#DC3545" if power_score < 40 else "#FFC107")
         st.markdown(f"### 🦅 鳳凰指數")
-        st.markdown(f"<h1 style='color:{color}; font-size: 100px; text-align: center; margin:0;'>{power_score:.0f}</h1>", unsafe_allow_html=True)
+        st.markdown(f"<h1 style='color:{color}; text-align: center; margin:0;'>{power_score:.0f}</h1>", unsafe_allow_html=True)
     with c2:
         st.markdown(f"<div class='big-metric-box'><div class='metric-label'>收盤價</div><div class='metric-value'>{user_price}</div></div>", unsafe_allow_html=True)
         st.markdown(f"<div class='big-metric-box'><div class='metric-label'>籌碼集中度</div><div class='metric-value'>{conc:.1f}%</div></div>", unsafe_allow_html=True)
@@ -416,30 +441,25 @@ def view_dashboard():
 
     st.markdown("---")
     cc1, cc2 = st.columns(2)
-    # ------------------------------------------------------------------
-    # 【改動 1】Top 15 -> Top 20，並顯示總量與均價
-    # ------------------------------------------------------------------
+    # Top 20 邏輯
     N_TOP = 20
     
     with cc1:
         if not final_agg.empty:
             final_agg['BuyAvg'] = np.where(final_agg['Buy']>0, final_agg['BuyCost']/final_agg['Buy'], 0)
             
-            # 買超 Top 20
             top_buy = final_agg.nlargest(N_TOP, 'Net').sort_values('Net', ascending=True)
             top_buy['Abs_Zhang'] = top_buy['Net'] / 1000
             
-            # 繪圖
             st.plotly_chart(plot_bar_chart(top_buy, 'Abs_Zhang', 'Broker', f"🔴 今日買超 Top {N_TOP}", '#DC3545', avg_col='BuyAvg'), use_container_width=True)
             
-            # 【改動 2】下方顯示 Top 20 總結
             tb_vol = top_buy['Net'].sum() / 1000
             tb_avg = (top_buy['BuyCost'].sum() / top_buy['Buy'].sum()) if top_buy['Buy'].sum() > 0 else 0
             
             st.markdown(f"""
             <div style="background-color:#ffe6e6; padding:15px; border-radius:10px; border-left: 10px solid #DC3545;">
-                <span style="color:#555; font-size:28px;">Top {N_TOP} 買方總計：</span><br>
-                <span style="color:#DC3545; font-size:40px; font-weight:900;">{tb_vol:,.1f} 張</span> <span style="font-size:28px; color:#333;">(均價 {tb_avg:.2f})</span>
+                <span style="color:#555; font-size:24px;">Top {N_TOP} 買方總計：</span><br>
+                <span style="color:#DC3545; font-size:36px; font-weight:900;">{tb_vol:,.1f} 張</span> <span style="font-size:24px; color:#333;">(均價 {tb_avg:.2f})</span>
             </div>
             """, unsafe_allow_html=True)
             
@@ -447,22 +467,19 @@ def view_dashboard():
         if not final_agg.empty:
             final_agg['SellAvg'] = np.where(final_agg['Sell']>0, final_agg['SellCost']/final_agg['Sell'], 0)
             
-            # 賣超 Top 20
             top_sell = final_agg.nsmallest(N_TOP, 'Net').copy()
             top_sell['Abs_Zhang'] = top_sell['Net'].abs() / 1000
             top_sell = top_sell.sort_values('Abs_Zhang', ascending=True)
             
-            # 繪圖
             st.plotly_chart(plot_bar_chart(top_sell, 'Abs_Zhang', 'Broker', f"🟢 今日賣超 Top {N_TOP}", '#28A745', avg_col='SellAvg'), use_container_width=True)
 
-            # 【改動 2】下方顯示 Top 20 總結
             ts_vol = top_sell['Net'].abs().sum() / 1000
             ts_avg = (top_sell['SellCost'].sum() / top_sell['Sell'].sum()) if top_sell['Sell'].sum() > 0 else 0
             
             st.markdown(f"""
             <div style="background-color:#e6ffe6; padding:15px; border-radius:10px; border-left: 10px solid #28A745;">
-                <span style="color:#555; font-size:28px;">Top {N_TOP} 賣方總計：</span><br>
-                <span style="color:#28A745; font-size:40px; font-weight:900;">{ts_vol:,.1f} 張</span> <span style="font-size:28px; color:#333;">(均價 {ts_avg:.2f})</span>
+                <span style="color:#555; font-size:24px;">Top {N_TOP} 賣方總計：</span><br>
+                <span style="color:#28A745; font-size:36px; font-weight:900;">{ts_vol:,.1f} 張</span> <span style="font-size:24px; color:#333;">(均價 {ts_avg:.2f})</span>
             </div>
             """, unsafe_allow_html=True)
 
@@ -483,7 +500,7 @@ def view_ai_strategy():
     c1, c2 = st.columns([1, 2])
     with c1:
         h_color = "#DC3545" if h_val > 0.6 else ("#28A745" if h_val < 0.4 else "#FFC107")
-        st.markdown(f"<h1 style='color:{h_color}; font-size: 100px;'>{h_val:.2f}</h1>", unsafe_allow_html=True)
+        st.markdown(f"<h1 style='color:{h_color}; margin:0;'>{h_val:.2f}</h1>", unsafe_allow_html=True)
     with c2:
         if h_val > 0.6: st.error("🔥 **強趨勢**：慣性大。")
         elif h_val < 0.4: st.success("🌊 **震盪**：高出低進。")
@@ -541,15 +558,12 @@ def view_chip_structure():
         target_v['Net_Zhang'] = target_v['Net'] / 1000
         target_v['Tier'] = target_v['Net'].apply(get_tier)
         
-        # ------------------------------------------------------------------
-        # 【改動 3】視覺權重平衡：大幅增加中實戶(Tier 3)的權重，抑制大戶獨大
-        # ------------------------------------------------------------------
+        # 視覺權重平衡：放大中實戶
         def weight_boost(row):
-            # 策略：讓中實戶 (Medium) 的顯示面積膨脹，以抗衡大戶 (Big)
-            if "超級大戶" in row['Tier']: return row['AbsNet'] * 1.0  # 維持原狀
-            if "大戶" in row['Tier']: return row['AbsNet'] * 1.0      # 維持原狀
-            if "中實戶" in row['Tier']: return row['AbsNet'] * 3.0   # 【關鍵】放大 3 倍，讓它視覺上能跟大戶抗衡
-            return row['AbsNet'] * 0.8  # 小資稍微縮小一點
+            if "超級大戶" in row['Tier']: return row['AbsNet'] * 1.0  
+            if "大戶" in row['Tier']: return row['AbsNet'] * 1.0      
+            if "中實戶" in row['Tier']: return row['AbsNet'] * 3.0   
+            return row['AbsNet'] * 0.8  
             
         target_v['W_Size'] = target_v.apply(weight_boost, axis=1)
 
@@ -559,8 +573,8 @@ def view_chip_structure():
                            color='Net_Zhang', color_continuous_scale=custom_scale, range_color=[-max_val, max_val],
                            title=f"{v_opt} 主力領土 (加權平衡顯示)")
         
-        fig_v.update_traces(textfont=dict(size=30), hovertemplate='<b>%{label}</b><br>淨量: %{color:.1f} 張')
-        fig_v.update_layout(hoverlabel=dict(font_size=30, font_family="Microsoft JhengHei", bgcolor="white"))
+        fig_v.update_traces(textfont=dict(size=24), hovertemplate='<b>%{label}</b><br>淨量: %{color:.1f} 張')
+        fig_v.update_layout(hoverlabel=dict(font_size=24, font_family="Microsoft JhengHei", bgcolor="white"))
         st.plotly_chart(fig_v, use_container_width=True)
 
     st.markdown("---")
@@ -577,7 +591,7 @@ def view_chip_structure():
         fig_p = go.Figure()
         fig_p.add_trace(go.Bar(y=df_p['Tier'], x=df_p['Buy'], name='買方', orientation='h', marker_color='#DC3545', text=df_p['Buy'].round(1), textposition='outside'))
         fig_p.add_trace(go.Bar(y=df_p['Tier'], x=df_p['Sell'], name='賣方', orientation='h', marker_color='#28A745', text=df_p['Sell'].round(1), textposition='outside'))
-        fig_p.update_layout(title="多空對峙金字塔 (張)", barmode='overlay', xaxis_title="淨買賣張數", yaxis=dict(categoryorder='array', categoryarray=tiers[::-1]), font=dict(size=26), height=600, hoverlabel=dict(font_size=30))
+        fig_p.update_layout(title="多空對峙金字塔 (張)", barmode='overlay', xaxis_title="淨買賣張數", yaxis=dict(categoryorder='array', categoryarray=tiers[::-1]), font=dict(size=20), height=600, hoverlabel=dict(font_size=24))
         st.plotly_chart(fig_p, use_container_width=True)
 
 # ============================================
@@ -627,10 +641,10 @@ def view_hunter_radar():
                        custom_data=['Info']) 
         
         fig_g.update_traces(
-            textfont=dict(size=30),
+            textfont=dict(size=24),
             hovertemplate="<b>%{y}</b><br>淨量: %{x} 張<br>成員明細:<br>%{customdata[0]}<extra></extra>"
         )
-        fig_g.update_layout(hoverlabel=dict(font_size=30, font_family="Microsoft JhengHei"), height=600, font=dict(size=26))
+        fig_g.update_layout(hoverlabel=dict(font_size=24, font_family="Microsoft JhengHei"), height=600, font=dict(size=22))
         st.plotly_chart(fig_g, use_container_width=True)
     else:
         st.warning("尚無今日資料。")
@@ -774,7 +788,7 @@ def view_broker_detective():
         data['Net_Zhang'] = data['Net'] / 1000
         fig = go.Figure()
         fig.add_trace(go.Bar(x=data['Date'], y=data['Net_Zhang'], name='淨買賣(張)', marker_color=np.where(data['Net']>0, '#DC3545', '#28A745')))
-        fig.update_layout(title=f"{target} 操作軌跡", yaxis=dict(title="張數"), height=600, hoverlabel=dict(font_size=30), font=dict(size=26))
+        fig.update_layout(title=f"{target} 操作軌跡", yaxis=dict(title="張數"), height=600, hoverlabel=dict(font_size=24), font=dict(size=22))
         st.plotly_chart(fig, use_container_width=True)
         show = data[['Date', 'Buy', 'Sell', 'Net', 'BuyAvg']].copy()
         show.iloc[:, 1:4] /= 1000
@@ -852,8 +866,8 @@ def view_batch_import():
 # ============================================
 def main():
     with st.sidebar:
-        st.title("🦅 Phoenix V102")
-        st.caption("平衡打擊版")
+        st.title("🦅 Phoenix V104")
+        st.caption("隱形自適應版")
         st.markdown("---")
         choice = st.radio("功能選單", ["🏠 總司令儀表板", "🧠 AI 戰略實驗室", "📈 趨勢戰情室", "🔍 獵殺雷達", "📉 籌碼斷層", "🕵️‍♂️ 分點偵探", "🏆 贏家與韭菜名人堂", "📂 資料管理後台"])
     
